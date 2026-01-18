@@ -42,22 +42,27 @@ export class ChatController {
             return c.json({ error: 'No message content found' }, 400)
         }
 
-        console.log(`[ChatController] extracted message: "${lastMessage.content}"`)
-
-        // 1. Get or Create Conversation
-        // Handle potential null conversationId
-        const validConvId = conversationId || undefined
-        let conversation
         try {
-            console.log(`[ChatController] Fetching conversation: ${validConvId}`)
-            conversation = await this.chatService.getOrCreateConversation(userId, validConvId)
-            console.log(`[ChatController] Conversation ID: ${conversation?.id}`)
-        } catch (dbError) {
-            console.error('[ChatController] DB Error:', dbError)
-            return c.json({ error: 'Database connection failed' }, 500)
-        }
+            console.log('[ChatController] Fetching conversation...')
+            const validConvId = conversationId || undefined
+            const conversation = await this.chatService.getOrCreateConversation(userId, validConvId)
+            console.log(`[ChatController] Conversation ready: ${conversation.id}`)
 
-        // 2. Process with Agent Service (Streaming Response)
-        return this.agentService.processMessage(conversation.id, lastMessage.content)
+            // 2. Process with Agent Service (JSON Response)
+            console.log('[ChatController] Delegating to AgentService...')
+            const result = await this.agentService.processMessage(conversation.id, lastMessage.content)
+            console.log('[ChatController] AgentService returned answer.')
+
+            // Explicitly return JSON response
+            return c.json({
+                text: result.text,
+                conversationId: conversation.id,
+                agentName: result.agentName
+            })
+
+        } catch (error) {
+            console.error('[ChatController] Error:', error)
+            return c.json({ error: 'Internal Server Error' }, 500)
+        }
     }
 }

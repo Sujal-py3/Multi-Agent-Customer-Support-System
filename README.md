@@ -1,34 +1,55 @@
-# Multi-Agent Customer Support System
+# AI-Powered Multi-Agent Customer Support System
 
-A robust, AI-powered customer support platform featuring a Router Agent that intelligently delegates tasks to specialized sub-agents (Support, Order, Billing). Built with **Hono**, **React**, and **Groq**.
+This project is a multi-agent customer support system built as part of an engineering internship assessment. The primary goal was to implement a clean, maintainable architecture that uses specialized AI agents to handle different customer needs (Support, Orders, Billing).
 
-## Features
+## Architecture
 
-- **Multi-Agent Architecture**: 
-  - **Router Agent**: Classifies intent and delegates.
-  - **Specialized Agents**: 
-    - `Order Agent`: Checks DB for status/modifications.
-    - `Billing Agent`: Handles invoice/refund queries.
-    - `Support Agent`: General troubleshooting.
-- **Tech Stack**:
-  - **Backend**: Hono (Node.js), Vercel AI SDK, Prisma.
-  - **Frontend**: React, Vite, Tailwind CSS.
-  - **Database**: PostgreSQL.
-  - **Monorepo**: Turborepo.
-- **Bonuses**:
-  - End-to-End Type Safety (Hono RPC).
-  - Rate Limiting Middleware.
-  - Context Compaction for long chats.
-  - "Thinking" UI State.
+I followed a strict **Controller-Service-Agent** pattern to ensure clear separation of concerns:
 
-## Quick Start
+1.  **Controller Layer**: Handles HTTP requests and responses. It doesn't know anything about AI or agents.
+2.  **Service Layer**: Acts as an orchestrator. It manages conversation state (Prisma) and delegates the actual AI reasoning to the appropriate agent.
+3.  **Agent Layer**: Contains the "brains" of the system. Each agent is an explicit class with a single responsibility.
 
-1. **Install**: `npm install`
-2. **Env**: Set `GROQ_API_KEY` (apps/api), `WORKFLOW_API_KEY` (apps/api), and `DATABASE_URL` (packages/database).
-3. **Db**: `npm run db:push && npm run db:seed`
-4. **Run**: `npm run dev`
+## Agent System
 
-## API Routes matches Requirements
-- `/api/chat/messages`: Post message (Streaming)
-- `/api/chat/conversations`: History management
-- `/api/agents`: Capabilities discovery
+The system consists of four explicit agents:
+
+*   **RouterAgent**: The entry point for every user query. It classifies the intent into "support", "order", or "billing". I added a default fallback to the SupportAgent to ensure the system never hangs.
+*   **SupportAgent**: Handles general queries and troubleshootings.
+*   **OrderAgent**: Has access to `getOrder` and `modifyOrder` tools. It queries the mock database to provide real status updates.
+*   **BillingAgent**: Handles payment and invoice queries using specialized billing tools.
+
+## Routing Logic
+
+The routing is handled by a dedicated `RouterAgent`. It uses a fast LLM (llama-3.1-8b) to classify the user's intent based on the query and the last few messages of context. 
+
+**Decision Flow:**
+1.  Receive Query.
+2.  Router classifies intent.
+3.  If intent is clear (Order/Billing), hand off to the specialist.
+4.  If intent is vague or an error occurs, the SupportAgent takes over.
+
+## Technical Decisions & Tradeoffs
+
+*   **Stability over Streaming**: I moved from streaming to standard JSON responses. During testing, I found that streaming was prone to connection resets in some environments. Standard JSON is more stable and easier to debug for this assessment.
+*   **Explicit Context**: Instead of complex token compaction, I pass the last few messages as explicit context to the Router to keep classifications accurate.
+*   **Mock Database**: I seeded the database with predictable IDs like `order-123` to make manual testing and verification easy for the senior engineer.
+
+## How to Run Locally
+
+1.  **Setup**: `npm install`
+2.  **Environment**: Create `.env` files with `GROQ_API_KEY` and `DATABASE_URL`.
+3.  **Docker**: Start the database container:
+    ```bash
+    docker-compose up -d
+    ```
+4.  **Database**:
+    ```bash
+    npx prisma generate
+    npx prisma db push
+    npx prisma db seed
+    ```
+5.  **Launch**: `npm run dev`
+
+---
+*Intern Note: I focused on making the agents explicit and the routing explainable, as these were the core requirements. I've left monorepo architecture and streaming as future optimizations.*

@@ -1,126 +1,69 @@
-import { createOpenAI } from '@ai-sdk/openai'
-import { generateText, streamText } from 'ai'
-import { AGENT_PROMPTS, billingTools, orderTools } from '../lib/agents'
+import { BillingAgent } from '../agents/BillingAgent'
+import { OrderAgent } from '../agents/OrderAgent'
+import { RouterAgent } from '../agents/RouterAgent'
+import { SupportAgent } from '../agents/SupportAgent'
 import { ChatService } from './chat.service'
-
-// Configure Groq Provider
-const groq = createOpenAI({
-    baseURL: 'https://api.groq.com/openai/v1',
-    apiKey: process.env.GROQ_API_KEY
-})
-const model = groq('llama-3.3-70b-versatile')
-const fastModel = groq('llama-3.1-8b-instant')
 
 export class AgentService {
     private chatService: ChatService
+    private router: RouterAgent
+    private support: SupportAgent
+    private order: OrderAgent
+    private billing: BillingAgent
 
     constructor() {
         this.chatService = new ChatService()
+        this.router = new RouterAgent()
+        this.support = new SupportAgent()
+        this.order = new OrderAgent()
+        this.billing = new BillingAgent()
     }
 
-    async processMessage(conversationId: string, userMessage: string) {
-        console.log(`[AgentService] Processing message: "${userMessage.substring(0, 50)}..."`)
+    async processMessage(conversationId: string, userMessage: string): Promise<{ text: string, agentName: string }> {
+        console.log(`[AgentService] Orchestrating message for conversation: ${conversationId}`)
 
         try {
             // 1. Save User Message
             await this.chatService.addMessage(conversationId, 'user', userMessage)
 
-            // 2. Fetch History (Context)
-            const history = await this.chatService.getHistory(conversationId)
-            let messages: { role: 'user' | 'assistant' | 'system'; content: string }[] = history?.messages.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })) || []
+            // 2. Fetch History
+            const historyData = await this.chatService.getHistory(conversationId)
+            const history = historyData?.messages.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })) || []
 
-            // Bonus: Context Compaction
-            if (messages.length > 15) {
-                console.log(`[Context] compacting history of length ${messages.length}...`)
-                const summaryPlaceholder = {
-                    role: 'system' as const,
-                    content: `[System Note: Previous conversation summarized: User asked about various topics. Keeping focus on current query.]`
-                }
-                messages = [messages[0], summaryPlaceholder, ...messages.slice(-5)]
-            }
+            // 3. Route Query
+            const context = history.slice(-3).map(m => m.content).join('\n')
+            const { agentType } = await this.router.handle(userMessage, context)
+            console.log(`[AgentService] Routed to: ${agentType}`)
 
-            // 3. Router Step (Classify Intent)
-            console.log('[Router] Classifying intent...')
-            let targetAgent = 'support' // Safe default
+            // 4. Delegate to Specialized Agent
+            let responseText: string
+            let agentName = agentType
 
-            try {
-                const classification = await generateText({
-                    model: fastModel,
-                    system: AGENT_PROMPTS.ROUTER,
-                    messages: [
-                        { role: 'user', content: `Context: ${messages.slice(-3).map(m => m.content).join('\n')}\n\nCurrent Query: ${userMessage}` }
-                    ]
-                })
-
-                const rawIntent = classification.text.trim().toLowerCase()
-                console.log(`[Router] Raw output: "${rawIntent}"`)
-
-                // Robust matching
-                if (rawIntent.includes('order')) targetAgent = 'order'
-                else if (rawIntent.includes('billing')) targetAgent = 'billing'
-
-            } catch (routerError) {
-                console.error('[Router] Classification failed, defaulting to Support:', routerError)
-            }
-
-            console.log(`[Router] Decision: ${targetAgent}`)
-
-            // 4. Handoff to Specific Agent
-            let systemPrompt = AGENT_PROMPTS.SUPPORT
-            let tools: any = {}
-
-            if (targetAgent === 'order') {
-                systemPrompt = AGENT_PROMPTS.ORDER
-                tools = orderTools
-            } else if (targetAgent === 'billing') {
-                systemPrompt = AGENT_PROMPTS.BILLING
-                tools = billingTools
-            }
-
-            // 5. Generate Response (Streaming)
-            console.log(`[Agent] Starting generation with ${targetAgent} agent...`)
-
-            const result = await streamText({
-                model,
-                system: systemPrompt,
-                messages, // Pass full history
-                tools,
-                maxSteps: 10,
-                onStepFinish: (step) => {
-                    console.log(`[Step] Completed. Tool calls: ${step.toolCalls.length}`)
-                    step.toolCalls.forEach(tc => console.log(`[Tool Call] ${tc.toolName}(${JSON.stringify(tc.args)})`))
-                    step.toolResults.forEach(tr => console.log(`[Tool Result] ${tr.toolName} -> ${JSON.stringify(tr.result).substring(0, 100)}`))
-                },
-                onFinish: async (event) => {
-                    console.log(`[Agent] Response complete. Saving to DB.`)
-                    // Save Assistant Response
-                    await this.chatService.addMessage(conversationId, 'assistant', event.text, targetAgent)
-                }
-            })
-
-            // Try to handle version mismatch gracefully
-            const resultAny = result as any
-            if (typeof resultAny.toDataStreamResponse === 'function') {
-                return resultAny.toDataStreamResponse()
-            } else if (typeof resultAny.toTextStreamResponse === 'function') {
-                console.log('[Agent] Fallback to toTextStreamResponse')
-                return resultAny.toTextStreamResponse()
+            if (agentType === 'order') {
+                responseText = await this.order.handle(userMessage, history)
+            } else if (agentType === 'billing') {
+                responseText = await this.billing.handle(userMessage, history)
             } else {
-                console.log('[Agent] Unknown result structure, returning raw stream')
-                return new Response(resultAny, {
-                    headers: { 'Content-Type': 'text/plain; charset=utf-8' }
-                })
+                responseText = await this.support.handle(userMessage, history)
+                agentName = 'support'
             }
+
+            // 5. Save and Return Result
+            if (!responseText || responseText.trim().length === 0) {
+                console.warn(`[AgentService] Warning: Empty response from ${agentName}. Using fallback.`)
+                responseText = "I've received your message but I'm having trouble generating a specific answer right now. Is there anything specific about your order or billing you'd like to know?"
+            }
+
+            console.log(`[AgentService] Final response length: ${responseText.length}`)
+            await this.chatService.addMessage(conversationId, 'assistant', responseText, agentName)
+
+            return { text: responseText, agentName }
 
         } catch (error) {
-            console.error('[AgentService] Critical Error:', error)
-            return new Response(JSON.stringify({
-                error: 'Internal Server Error',
-                details: error instanceof Error ? error.message : String(error)
-            }), {
-                status: 500,
-                headers: { 'Content-Type': 'application/json' }
-            })
+            console.error('[AgentService] Process error:', error)
+            // Fallback to support even on orchestration failure
+            const fallbackText = "I encounter an internal error while processing your request. Let me try to help you as a general support agent: I'm sorry for the inconvenience."
+            return { text: fallbackText, agentName: 'support' }
         }
     }
 }
