@@ -1,0 +1,21 @@
+{
+    "name": "multi-agent-support",
+    "private": true,
+    "workspaces": [
+        "apps/*",
+        "packages/*"
+    ],
+    "scripts": {
+        "build": "turbo run build",
+        "dev": "turbo run dev",
+        "lint": "turbo run lint",
+        "clean": "turbo run clean",
+        "db:generate": "turbo run db:generate",
+        "db:push": "turbo run db:push",
+        "db:seed": "turbo run db:seed"
+    },
+    "devDependencies": {
+        "turbo": "latest"
+    },
+    "packageManager": "npm@10.0.0"
+}

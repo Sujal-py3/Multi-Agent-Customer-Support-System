@@ -1,0 +1,12 @@
+{
+    "extends": "@repo/tsconfig/base.json",
+    "compilerOptions": {
+        "module": "commonjs",
+        "outDir": "dist",
+        "target": "es2020",
+        "moduleResolution": "node"
+    },
+    "include": [
+        "src/**/*"
+    ]
+}

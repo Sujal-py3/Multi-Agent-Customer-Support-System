@@ -1,0 +1,14 @@
+# Debug logs
+*.log
+debug.log
+debug_controller.log
+
+# Temporary scripts
+apps/api/seed_user.ts
+apps/api/seed_user_js.js
+apps/api/verify_agent.ts
+
+node_modules
+.env
+dist
+.turbo

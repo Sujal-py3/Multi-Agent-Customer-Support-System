@@ -1,0 +1,10 @@
+hono
+@hono/node-server
+dotenv
+ai
+@ai-sdk/openai
+zod
+@prisma/client
+prisma
+cors
+hono-rate-limiter
