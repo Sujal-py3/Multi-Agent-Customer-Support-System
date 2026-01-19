@@ -9,7 +9,8 @@ pnpm-debug.log*
 .env
 *.env
 .env.*
-
+apps/api/.env
+apps/web/.env
 # OS Files
 .DS_Store
 Thumbs.db
