@@ -1,55 +1,82 @@
-# AI-Powered Multi-Agent Customer Support System
+# Multi-Agent Customer Support System
 
-This project is a multi-agent customer support system built as part of an engineering internship assessment. The primary goal was to implement a clean, maintainable architecture that uses specialized AI agents to handle different customer needs (Support, Orders, Billing).
-
-## Architecture
-
-I followed a strict **Controller-Service-Agent** pattern to ensure clear separation of concerns:
-
-1.  **Controller Layer**: Handles HTTP requests and responses. It doesn't know anything about AI or agents.
-2.  **Service Layer**: Acts as an orchestrator. It manages conversation state (Prisma) and delegates the actual AI reasoning to the appropriate agent.
-3.  **Agent Layer**: Contains the "brains" of the system. Each agent is an explicit class with a single responsibility.
-
-## Agent System
-
-The system consists of four explicit agents:
-
-*   **RouterAgent**: The entry point for every user query. It classifies the intent into "support", "order", or "billing". I added a default fallback to the SupportAgent to ensure the system never hangs.
-*   **SupportAgent**: Handles general queries and troubleshootings.
-*   **OrderAgent**: Has access to `getOrder` and `modifyOrder` tools. It queries the mock database to provide real status updates.
-*   **BillingAgent**: Handles payment and invoice queries using specialized billing tools.
-
-## Routing Logic
-
-The routing is handled by a dedicated `RouterAgent`. It uses a fast LLM (llama-3.1-8b) to classify the user's intent based on the query and the last few messages of context. 
-
-**Decision Flow:**
-1.  Receive Query.
-2.  Router classifies intent.
-3.  If intent is clear (Order/Billing), hand off to the specialist.
-4.  If intent is vague or an error occurs, the SupportAgent takes over.
-
-## Technical Decisions & Tradeoffs
-
-*   **Stability over Streaming**: I moved from streaming to standard JSON responses. During testing, I found that streaming was prone to connection resets in some environments. Standard JSON is more stable and easier to debug for this assessment.
-*   **Explicit Context**: Instead of complex token compaction, I pass the last few messages as explicit context to the Router to keep classifications accurate.
-*   **Mock Database**: I seeded the database with predictable IDs like `order-123` to make manual testing and verification easy for the senior engineer.
-
-## How to Run Locally
-
-1.  **Setup**: `npm install`
-2.  **Environment**: Create `.env` files with `GROQ_API_KEY` and `DATABASE_URL`.
-3.  **Docker**: Start the database container:
-    ```bash
-    docker-compose up -d
-    ```
-4.  **Database**:
-    ```bash
-    npx prisma generate
-    npx prisma db push
-    npx prisma db seed
-    ```
-5.  **Launch**: `npm run dev`
+This is my R&D Internship Assignment for swades.ai. It’s a full-stack AI customer support chat that routes you to the right department (Support, Order, or Billing) and remembers your conversation history.
 
 ---
-*Intern Note: I focused on making the agents explicit and the routing explainable, as these were the core requirements. I've left monorepo architecture and streaming as future optimizations.*
+
+## 🏗 High-Level Architecture
+
+I built this as a **Monorepo** (using Turborepo) to keep the backend and frontend separate but easy to manage.
+
+1.  **Apps:**
+    *   **`apps/web`**: The frontend. A React + Vite app. It’s pretty simple—just a dark-themed chat interface that talks to the API.
+    *   **`apps/api`**: The backend. Built with Hono (it’s fast). This is where the brains are.
+2.  **Packages:**
+    *   **`packages/rpc-types`**: A shared folder so the frontend knows exactly what the backend sends (Type Safety).
+
+### HOW IT WORKS (The "Brain")
+It uses a **Controller-Service-Agent** pattern:
+1.  **Controller**: Receives your message (`POST /api/chat/messages`).
+2.  **Service (`AgentService`)**:
+    *   Saves your message to the DB (Prisma + SQLite).
+    *   **Compaction**: If the chat gets too long (>10 messages), it summarizes the old stuff so we don't crash the AI.
+    *   **Router**: Asks a small AI ("RouterAgent") to decide if you need *Support*, *Order*, or *Billing*.
+    *   **Agent**: Calls the right agent.
+3.  **Agents**:
+    *   Each agent has a specific personality and tools (e.g., the Order Agent can "look up" order #123).
+    *   They generate a response using Groq (`llama-3.1-8b-instant`).
+
+---
+
+## 🎨 Design Decisions
+
+*   **Hono over Express**: I chose Hono because it supports RPC (remote procedure calls). This means I didn't have to manually write TypeScript types for every API response—it just worked.
+*   **SQLite**: Kept it simple. No need for a heavy Postgres server for a demo.
+*   **Groq**: It’s super fast. Dealing with slow AI responses is annoying, so I picked the fastest provider I could find.
+*   **"Compaction"**: LLMs have a limit on how much text they can read. Instead of just deleting old messages, I wrote logic to summarize them. It’s like giving the AI a "previously on..." recap.
+
+---
+
+## ⚠️ What Went Wrong (And How I Fixed It)
+
+It wasn't smooth sailing. Here is the honest truth about the bugs I hit:
+
+1.  **The "Infinite Loop" Router**:
+    *   *Issue*: At first, the RouterAgent kept returning JSON that wasn't quite right, and my code broke trying to parse it.
+    *   *Fix*: I switched to a strict `object` output mode in the Vercel AI SDK to force the model to behave.
+
+2.  **Missing "Workspace" Protocol**:
+    *   *Issue*: I tried using `npm install` with `workspace:*` dependencies (which works in pnpm/yarn), but npm yelled at me.
+    *   *Fix*: I had to go into `package.json` and change the versions to just `*`. Simple fix, but annoying error.
+
+3.  **Frontend CSS Alignment**:
+    *   *Issue*: The user asked for "left-oriented text". I thought I added it, but I applied it to the wrong CSS class.
+    *   *Fix*: I had to explicitly add `text-align: left` to the `.bubble` class.
+
+4.  **Conversation Memory**:
+    *   *Issue*: The AI kept saying "I don't see a previous message" even when there was one.
+    *   *Fix*: I tightened up the System Prompt (the instructions I give the AI) to tell it: "ALWAYS check the history provided."
+
+---
+
+## 🚀 How to Run It
+
+1.  **Install**:
+    ```bash
+    npm install
+    ```
+
+2.  **Example .env**:
+    Make sure you have a `.env` file with `GROQ_API_KEY` and `DATABASE_URL`.
+
+3.  **Run**:
+    ```bash
+    npm run dev
+    ```
+    This runs BOTH the backend (port 3000) and frontend (port 5173).
+
+4.  **Test**:
+    ```bash
+    npm test
+    ```
+    Runs the unit tests I wrote for the router and database persistence.

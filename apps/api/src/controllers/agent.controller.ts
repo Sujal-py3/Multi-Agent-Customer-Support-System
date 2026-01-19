@@ -1,21 +1,29 @@
-import { Context } from 'hono'
+import { Context } from 'hono';
 
-export class AgentController {
-    listAgents = async (c: Context) => {
-        return c.json([
-            { id: 'support', name: 'Support Agent', description: 'General FAQs and troubleshooting' },
-            { id: 'order', name: 'Order Agent', description: 'Order status and modifications' },
-            { id: 'billing', name: 'Billing Agent', description: 'Invoices and refunds' }
-        ])
-    }
+export const agentController = {
+    async listAgents(c: Context) {
+        const agents = [
+            { type: "support", description: "General support & FAQs" },
+            { type: "order", description: "Order tracking & status" },
+            { type: "billing", description: "Payments & refunds" }
+        ];
+        return c.json(agents);
+    },
 
-    getAgentCapabilities = async (c: Context) => {
-        const type = c.req.param('type')
+    async getCapabilities(c: Context) {
+        const type = c.req.param('type');
+
         const capabilities: Record<string, string[]> = {
-            support: ['Query History', 'General FAQ'],
-            order: ['Get Order', 'Modify Order', 'Cancel Order'],
-            billing: ['Get Invoice', 'Check Refund Status']
-        }
-        return c.json({ type, capabilities: capabilities[type] || [] })
+            support: ["General questions", "Route to specialists", "Conversation history"],
+            order: ["Order tracking", "Delivery status", "Order details"],
+            billing: ["Invoice lookups", "Refund status", "Payment history"]
+        };
+
+        const agentCapabilities = capabilities[type] || [];
+
+        return c.json({
+            agent: type,
+            capabilities: agentCapabilities
+        });
     }
-}
+};

@@ -1,35 +1,64 @@
-import { createOpenAI } from '@ai-sdk/openai'
-import { generateText } from 'ai'
-import { AGENT_PROMPTS, billingTools } from '../lib/agents'
+import { groq } from '@ai-sdk/groq';
+import { generateText } from 'ai';
+import { billingTool } from '../tools/billing.tool';
+import { IAgent } from './types';
 
-const groq = createOpenAI({
-    baseURL: 'https://api.groq.com/openai/v1',
-    apiKey: process.env.GROQ_API_KEY
-})
-const model = groq('llama-3.3-70b-versatile')
+export class BillingAgent implements IAgent {
+    async handle(query: string, _history: any[]): Promise<string> {
+        console.log("[BillingAgent] start");
 
-export class BillingAgent {
-    async handle(query: string, history: any[]): Promise<string> {
-        console.log('[BillingAgent] Handling billing query...')
+        // Extract orderId for billing query
+        const orderIdMatch = query.match(/order-\w+/i);
+        let orderId = orderIdMatch ? orderIdMatch[0] : null;
 
-        try {
-            console.log(`[BillingAgent] Calling Llama-70B for query: "${query.substring(0, 30)}..."`)
-            const { text, steps } = await generateText({
-                model,
-                system: AGENT_PROMPTS.BILLING,
-                messages: history, // History already contains the message
-                tools: billingTools,
-                maxSteps: 5,
-                onStepFinish: (step: any) => {
-                    console.log(`[BillingAgent Step] Tool calls: ${step.toolCalls.length}, Tool results: ${step.toolResults.length}`)
+        if (!orderId) {
+            // Look back through history for an order reference
+            const orderMention = [..._history].reverse().find(
+                m => m.content.toLowerCase().includes("order-")
+            );
+
+            if (orderMention) {
+                const match = orderMention.content.match(/order-\w+/i);
+                if (match) {
+                    orderId = match[0];
+                    console.log(`[BillingAgent] inferred orderId from history: ${orderId}`);
                 }
-            } as any)
+            }
+        }
 
-            console.log(`[BillingAgent] Final steps: ${steps?.length}, Text length: ${text.length}`)
-            return text
+        if (!orderId) {
+            console.log("[BillingAgent] end: no orderId found");
+            return "Please provide your order ID so I can check the payment status.";
+        }
+
+        // Call tools
+        console.log(`[BillingAgent] tool call: fetching billing for ${orderId}`);
+        try {
+            const invoice = await billingTool.getInvoiceByOrderId(orderId);
+            const refund = await billingTool.getRefundStatus(orderId);
+
+            const { text } = await generateText({
+                model: groq('llama-3.1-8b-instant'),
+                system: `You are a Billing Support agent. Use the provided tool data to answer the user's question about order ${orderId}. Be extremely concise. Answer in 1-2 sentences max. Do NOT offer extra help or pleasantries.
+            Tool Data:
+            - Invoice Status: ${invoice.status}
+            - Refund Status: ${refund.status}`,
+                messages: [
+                    ..._history.map(m => ({
+                        role: m.role === 'assistant' ? 'assistant' as const : 'user' as const,
+                        content: m.content
+                    })),
+                    { role: 'user', content: query }
+                ]
+            });
+
+            console.log("[BillingAgent] end");
+            return text;
         } catch (error) {
-            console.error('[BillingAgent] Error:', error)
-            return "I'm having trouble with the billing system. Please check back later or contact us if this is urgent."
+            console.log(`[BillingAgent] order/billing not found: ${orderId}`);
+            return "order not present.";
         }
     }
 }
+
+export const billingAgent = new BillingAgent();

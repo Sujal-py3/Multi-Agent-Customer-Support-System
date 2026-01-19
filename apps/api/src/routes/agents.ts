@@ -1,11 +1,9 @@
+import { agentController } from '../controllers/agent.controller';
 import { Hono } from 'hono'
-import { AgentController } from '../controllers/agent.controller'
 
-export const agentRoutes = new Hono()
-const agentController = new AgentController()
+const agents = new Hono();
 
-// GET /api/agents - List available agents
-agentRoutes.get('/', agentController.listAgents)
+agents.get('/', agentController.listAgents);
+agents.get('/:type/capabilities', agentController.getCapabilities);
 
-// GET /api/agents/:type/capabilities - Get agent capabilities
-agentRoutes.get('/:type/capabilities', agentController.getAgentCapabilities)
+export default agents;

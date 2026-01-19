@@ -1,0 +1,12 @@
+{
+    "name": "@repo/rpc-types",
+    "version": "0.0.0",
+    "main": "./index.ts",
+    "types": "./index.ts",
+    "dependencies": {
+        "@repo/api": "*"
+    },
+    "devDependencies": {
+        "typescript": "^5.0.0"
+    }
+}

@@ -1,21 +1,36 @@
 {
-    "name": "multi-agent-support",
-    "private": true,
-    "workspaces": [
-        "apps/*",
-        "packages/*"
-    ],
-    "scripts": {
-        "build": "turbo run build",
-        "dev": "turbo run dev",
-        "lint": "turbo run lint",
-        "clean": "turbo run clean",
-        "db:generate": "turbo run db:generate",
-        "db:push": "turbo run db:push",
-        "db:seed": "turbo run db:seed"
-    },
-    "devDependencies": {
-        "turbo": "latest"
-    },
-    "packageManager": "npm@10.0.0"
+  "name": "multi-agent-customer-support-system",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "start": "ts-node apps/api/src/server.ts",
+    "dev:api": "ts-node apps/api/src/server.ts",
+    "dev:web": "npm --prefix apps/web run dev",
+    "dev": "concurrently \"npm run dev:api\" \"npm run dev:web\"",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@ai-sdk/groq": "^3.0.10",
+    "@hono/node-server": "^1.19.9",
+    "@prisma/client": "^5.22.0",
+    "ai": "^6.0.39",
+    "dotenv": "^16.4.0",
+    "hono": "^4.11.4",
+    "prisma": "^5.22.0"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^4.0.17",
+    "concurrently": "^8.2.2",
+    "ts-node": "^10.9.2",
+    "turbo": "^1.10.16",
+    "typescript": "^5.0.0",
+    "vitest": "^4.0.17"
+  },
+  "prisma": {
+    "seed": "ts-node apps/api/prisma/seed.ts"
+  }
 }

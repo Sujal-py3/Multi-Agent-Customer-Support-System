@@ -1,102 +1,112 @@
-import { Bot, Cpu, Send, User } from 'lucide-react'
-import { useEffect, useState } from 'react'
-import { useChat } from './hooks/useChat'
-import { api } from './lib/api'
+import { useEffect, useRef, useState } from 'react'
+import './App.css'
+
+interface Message {
+    role: 'user' | 'assistant'
+    content: string
+}
 
 function App() {
-    const [conversationId, setConversationId] = useState<string | null>(null)
-    const [conversations, setConversations] = useState<any[]>([])
+    const [messages, setMessages] = useState<Message[]>([])
+    const [input, setInput] = useState('')
+    const [conversationId, setConversationId] = useState<string | undefined>()
+    const [loading, setLoading] = useState(false)
+    const [loadingText, setLoadingText] = useState('Thinking...')
+    const messagesEndRef = useRef<HTMLDivElement>(null)
 
-    const { messages, input, handleInputChange, handleSubmit, activeAgent } = useChat(conversationId)
+    const loadingPhrases = [
+        "Thinking...",
+        "Searching orders...",
+        "Checking billing details...",
+        "Reviewing history...",
+        "Formulating response..."
+    ]
 
-    // Load conversations
     useEffect(() => {
-        api.chat.conversations.$get().then(async (res) => {
-            if (res.ok) setConversations(await res.json())
-        })
-    }, [])
+        let interval: any
+        if (loading) {
+            let i = 0
+            interval = setInterval(() => {
+                i = (i + 1) % loadingPhrases.length
+                setLoadingText(loadingPhrases[i])
+            }, 2000)
+        } else {
+            setLoadingText("Thinking...") // Reset
+        }
+        return () => clearInterval(interval)
+    }, [loading])
 
-    const startNewChat = () => setConversationId(null)
+    const scrollToBottom = () => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
+
+    useEffect(() => {
+        scrollToBottom()
+    }, [messages])
+
+    const sendMessage = async () => {
+        if (!input.trim()) return
+
+        const userMessage: Message = { role: 'user', content: input }
+        setMessages(prev => [...prev, userMessage])
+        setInput('')
+        setLoading(true)
+
+        try {
+            const response = await fetch('/api/chat/messages', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    message: input,
+                    conversationId: conversationId
+                }),
+            })
+
+            const data = await response.json()
+
+            if (data.conversationId) {
+                setConversationId(data.conversationId)
+            }
+
+            const assistantMessage: Message = { role: 'assistant', content: data.text }
+            setMessages(prev => [...prev, assistantMessage])
+        } catch (error) {
+            console.error('Error:', error)
+            const errorMessage: Message = { role: 'assistant', content: 'Oops! Something went wrong.' }
+            setMessages(prev => [...prev, errorMessage])
+        } finally {
+            setLoading(false)
+        }
+    }
 
     return (
-        <div className="flex h-screen bg-gray-900 text-white font-sans">
-            {/* Sidebar */}
-            <div className="w-64 bg-gray-800 p-4 border-r border-gray-700 flex flex-col">
-                <h1 className="text-xl font-bold mb-6 flex items-center gap-2">
-                    <Cpu className="text-blue-400" /> AgentSys
-                </h1>
-                <button
-                    onClick={startNewChat}
-                    className="w-full bg-blue-600 hover:bg-blue-700 p-2 rounded mb-4"
-                >
-                    + New Chat
-                </button>
-                <div className="flex-1 overflow-y-auto space-y-2">
-                    {conversations.map(conv => (
-                        <div
-                            key={conv.id}
-                            onClick={() => setConversationId(conv.id)}
-                            className={`p-2 rounded cursor-pointer truncate ${conversationId === conv.id ? 'bg-gray-700' : 'hover:bg-gray-700/50'}`}
-                        >
-                            {conv.messages[0]?.content.substring(0, 30) || 'Empty Chat'}...
+        <div className="chat-container">
+            <h1>AI Customer Support</h1>
+            <div className="messages-list">
+                {messages.map((msg, i) => (
+                    <div key={i} className={`message ${msg.role}`}>
+                        <div className="bubble">
+                            {msg.content}
                         </div>
-                    ))}
-                </div>
+                    </div>
+                ))}
+                {loading && <div className="message assistant loading"><div className="bubble">{loadingText}</div></div>}
+                <div ref={messagesEndRef} />
             </div>
-
-            {/* Main Chat */}
-            <div className="flex-1 flex flex-col">
-                <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                    {messages.length === 0 && (
-                        <div className="text-center text-gray-500 mt-20">
-                            <Cpu className="w-16 h-16 mx-auto mb-4 opacity-50" />
-                            <p>How can I help you today?</p>
-                        </div>
-                    )}
-
-                    {messages.map(m => (
-                        <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                            <div className={`max-w-[80%] p-4 rounded-lg flex gap-3 ${m.role === 'user' ? 'bg-blue-600' : 'bg-gray-800 border border-gray-700'
-                                }`}>
-                                <div className="mt-1">
-                                    {m.role === 'user' ? <User size={18} /> : <Bot size={18} />}
-                                </div>
-                                <div>
-                                    <p className="whitespace-pre-wrap">{m.content}</p>
-                                </div>
-                            </div>
-                        </div>
-                    ))}
-
-                    {/* Typing Indicator */}
-                    {activeAgent && (
-                        <div className="flex justify-start animate-pulse">
-                            <div className="bg-gray-800/50 border border-gray-700/50 px-4 py-2 rounded-full text-sm text-gray-400 flex items-center gap-2">
-                                <Cpu size={14} className="animate-spin" />
-                                {activeAgent} is thinking...
-                            </div>
-                        </div>
-                    )}
-                </div>
-
-                {/* Input Area */}
-                <div className="p-4 bg-gray-800 border-t border-gray-700">
-                    <form onSubmit={handleSubmit} className="flex gap-2 max-w-4xl mx-auto">
-                        <input
-                            value={input}
-                            onChange={handleInputChange}
-                            placeholder="Ask about your order #123..."
-                            className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 focus:outline-none focus:border-blue-500"
-                        />
-                        <button
-                            type="submit"
-                            className="bg-blue-600 hover:bg-blue-700 px-6 rounded-lg flex items-center gap-2 disabled:opacity-50"
-                            disabled={!input.trim()}
-                        >
-                            <Send size={18} />
-                        </button>
-                    </form>
-                </div>
+            <div className="input-area">
+                <input
+                    type="text"
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                    placeholder="Ask me anything..."
+                    disabled={loading}
+                />
+                <button onClick={sendMessage} disabled={loading || !input.trim()}>
+                    Send
+                </button>
             </div>
         </div>
     )

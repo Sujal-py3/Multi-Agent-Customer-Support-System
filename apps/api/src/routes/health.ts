@@ -1,4 +1,13 @@
-import { Hono } from 'hono'
+import { Hono } from 'hono';
 
-export const healthRoute = new Hono()
-    .get('/', (c) => c.json({ status: 'ok', timestamp: new Date().toISOString() }))
+const health = new Hono();
+
+health.get('/', (c) => {
+    return c.json({
+        status: "ok",
+        uptime: process.uptime(),
+        timestamp: new Date().toISOString()
+    });
+});
+
+export default health;

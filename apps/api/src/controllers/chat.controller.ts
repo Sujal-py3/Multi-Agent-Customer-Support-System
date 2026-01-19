@@ -1,68 +1,59 @@
-import { Context } from 'hono'
-import { AgentService } from '../services/agent.service'
-import { ChatService } from '../services/chat.service'
+import { Context } from 'hono';
+import { agentService } from '../services/agent.service';
 
-export class ChatController {
-    private chatService: ChatService
-    private agentService: AgentService
-
-    constructor() {
-        this.chatService = new ChatService()
-        this.agentService = new AgentService()
-    }
-
-    getConversations = async (c: Context) => {
-        // Mock user ID for now
-        const userId = 'user-123'
-        const conversations = await this.chatService.listConversations(userId)
-        return c.json(conversations)
-    }
-
-    getConversationById = async (c: Context) => {
-        const id = c.req.param('id')
-        const history = await this.chatService.getHistory(id)
-        if (!history) return c.json({ error: 'Conversation not found' }, 404)
-        return c.json(history)
-    }
-
-    deleteConversation = async (c: Context) => {
-        const id = c.req.param('id')
-        await this.chatService.deleteConversation(id)
-        return c.json({ success: true })
-    }
-
-    sendMessage = async (c: Context) => {
-        console.log('[ChatController] sendMessage called')
-        const { messages, conversationId } = await c.req.json()
-        const userId = 'user-123' // Mock
-
-        // Extract the last user message
-        const lastMessage = messages[messages.length - 1]
-        if (!lastMessage || !lastMessage.content) {
-            return c.json({ error: 'No message content found' }, 400)
-        }
-
+export const chatController = {
+    async sendMessage(c: Context) {
         try {
-            console.log('[ChatController] Fetching conversation...')
-            const validConvId = conversationId || undefined
-            const conversation = await this.chatService.getOrCreateConversation(userId, validConvId)
-            console.log(`[ChatController] Conversation ready: ${conversation.id}`)
+            const { message, history, conversationId } = await c.req.json();
 
-            // 2. Process with Agent Service (JSON Response)
-            console.log('[ChatController] Delegating to AgentService...')
-            const result = await this.agentService.processMessage(conversation.id, lastMessage.content)
-            console.log('[ChatController] AgentService returned answer.')
+            console.log(`[ChatController] receiving message: ${message} (Conversation: ${conversationId || 'none'})`);
 
-            // Explicitly return JSON response
+            const result = await agentService.handleMessage(message, history || [], conversationId);
+
             return c.json({
+                conversationId: result.conversationId,
+                agent: result.agentName,
                 text: result.text,
-                conversationId: conversation.id,
-                agentName: result.agentName
-            })
+                status: "completed"
+            });
+        } catch (error: any) {
+            console.error(`[ChatController] error: ${error.message}`);
+            return c.json({
+                success: false,
+                error: error.message
+            }, 500);
+        }
+    },
 
-        } catch (error) {
-            console.error('[ChatController] Error:', error)
-            return c.json({ error: 'Internal Server Error' }, 500)
+    async getConversations(c: Context) {
+        try {
+            const conversations = await agentService.listConversations();
+            return c.json(conversations);
+        } catch (error: any) {
+            return c.json({ error: error.message }, 500);
+        }
+    },
+
+    async getConversation(c: Context) {
+        const id = c.req.param('id');
+        try {
+            const history = await agentService.getConversationHistory(id);
+            return c.json({
+                conversationId: id,
+                messages: history
+            });
+        } catch (error: any) {
+            return c.json({ error: error.message }, 404);
+        }
+    },
+
+    async deleteConversation(c: Context) {
+        const id = c.req.param('id');
+        try {
+            await agentService.deleteConversation(id);
+            return c.json({ success: true });
+        } catch (error: any) {
+            return c.json({ error: error.message }, 500);
         }
     }
-}
+};

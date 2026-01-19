@@ -1,30 +1,30 @@
-import { createOpenAI } from '@ai-sdk/openai'
-import { generateText } from 'ai'
-import { AGENT_PROMPTS } from '../lib/agents'
+import { groq } from '@ai-sdk/groq';
+import { generateText } from 'ai';
+import { conversationTool } from '../tools/conversation.tool';
+import { IAgent } from './types';
 
-const groq = createOpenAI({
-    baseURL: 'https://api.groq.com/openai/v1',
-    apiKey: process.env.GROQ_API_KEY
-})
-const model = groq('llama-3.3-70b-versatile')
+export class SupportAgent implements IAgent {
+    async handle(query: string, _history: any[], conversationId?: string): Promise<string> {
+        console.log("[SupportAgent] start");
 
-export class SupportAgent {
-    async handle(query: string, history: any[]): Promise<string> {
-        console.log('[SupportAgent] Handling query...')
+        // Tool call for context (existing requirement)
+        await conversationTool.getConversationHistory(conversationId || 'default-id');
 
-        try {
-            console.log(`[SupportAgent] Calling LLM with history length: ${history.length}`)
-            const { text } = await generateText({
-                model,
-                system: AGENT_PROMPTS.SUPPORT,
-                messages: history // History already contains the user message
-            })
+        const { text } = await generateText({
+            model: groq('llama-3.1-8b-instant'),
+            system: "You are a helpful customer support assistant. You provide general information and can help route users. We have exactly three departments: 1. Support Agent (General inquiries, FAQs, troubleshooting), 2. Order Agent (Order status, tracking, modifications, cancellations), 3. Billing Agent (Payment issues, refunds, invoices, subscriptions). ALWAYS check the provided message history for context before answering. If the user refers to a previous message (e.g., 'what did I just say?'), validly answer from the history. Be extremely concise. Answer in 1-2 sentences max.",
+            messages: [
+                ..._history.map(m => ({
+                    role: m.role === 'assistant' ? 'assistant' as const : 'user' as const,
+                    content: m.content
+                })),
+                { role: 'user', content: query }
+            ]
+        });
 
-            console.log('[SupportAgent] Execution completed.')
-            return text
-        } catch (error) {
-            console.error('[SupportAgent] Error:', error)
-            return "I'm sorry, I'm having trouble processing your request right now. How else can I help you?"
-        }
+        console.log("[SupportAgent] end");
+        return text;
     }
 }
+
+export const supportAgent = new SupportAgent();
