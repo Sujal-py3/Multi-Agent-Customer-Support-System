@@ -1,6 +1,6 @@
 # Multi-Agent Customer Support System
 
-This is my R&D Internship Assignment for swades.ai. It’s a full-stack AI customer support chat that routes you to the right department (Support, Order, or Billing) and remembers your conversation history.
+This is a full-stack AI customer support chat that routes you to the right department (Support, Order, or Billing) and remembers your conversation history.
 
 ---
 
